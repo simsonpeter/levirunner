@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Levi Runner</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      background: #87CEEB;
+      font-family: 'Comic Sans MS', cursive, sans-serif;
+      overflow: hidden;
+      touch-action: none;
+    }
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      max-height: 100vh;
+    }
+    #gameUI {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: white;
+      font-size: 16px;
+      text-shadow: 2px 2px 0 #000;
+      z-index: 10;
+      pointer-events: none;
+    }
+    #gameTitle {
+      position: absolute;
+      top: 10px;
+      width: 100%;
+      text-align: center;
+      color: #FFD700;
+      font-size: 28px;
+      font-weight: bold;
+      text-shadow: 3px 3px 0 #000;
+      z-index: 10;
+      pointer-events: none;
+    }
+    #gameOver, #pauseMenu {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: white;
+      font-size: 32px;
+      text-shadow: 3px 3px 0 #000;
+      text-align: center;
+      background: rgba(0,0,0,0.8);
+      padding: 25px;
+      border-radius: 20px;
+      display: none;
+      z-index: 30;
+    }
+    button {
+      margin-top: 15px;
+      padding: 12px 24px;
+      font-size: 20px;
+      background: #FFD700;
+      border: 3px solid #FFA500;
+      border-radius: 12px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    button:active {
+      transform: scale(0.97);
+    }
+    #jumpZone {
+      position: absolute;
+      bottom: 0;
+      width: 100%;
+      height: 45%;
+      z-index: 5;
+    }
+    .skinSelector {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 15px;
+    }
+    .skinBtn {
+      width: 40px;
+      height: 40px;
+      border: 2px solid white;
+      border-radius: 8px;
+      background-color: #0078D7;
+    }
+    .skinBtn.active {
+      border-color: gold;
+      transform: scale(1.1);
+    }
+    #settingsBtn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(255,255,255,0.3);
+      border: 2px solid white;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      font-weight: bold;
+      color: white;
+      z-index: 20;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas"></canvas>
+
+  <div id="gameTitle">LEVI RUNNER</div>
+  <div id="gameUI">
+    Score: <span id="score">0</span> | 
+    High: <span id="highScore">0</span> | 
+    <span id="lives">❤️❤️❤️</span>
+  </div>
+
+  <button id="settingsBtn">⚙️</button>
+
+  <div id="gameOver">
+    GAME OVER<br>
+    Final Score: <span id="finalScore">0</span>
+    <br>
+    <div class="skinSelector">
+      <button class="skinBtn active" data-skin="blue">🔵</button>
+      <button class="skinBtn" data-skin="red">🔴</button>
+      <button class="skinBtn" data-skin="green">🟢</button>
+    </div>
+    <button id="restartBtn">Play Again</button>
+  </div>
+
+  <div id="pauseMenu">
+    PAUSED
+    <br>
+    <button id="resumeBtn">Resume</button>
+    <br>
+    <button id="homeBtn">Main Menu</button>
+  </div>
+
+  <div id="jumpZone"></div>
+
+  <!-- Audio Elements -->
+  <audio id="jumpSfx" src="https://www.soundjay.com/button/sounds/button-09.mp3" preload="auto"></audio>
+  <audio id="collectSfx" src="https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3" preload="auto"></audio>
+  <audio id="crashSfx" src="https://www.soundjay.com/misc/sounds/explosion-02.mp3" preload="auto"></audio>
+
+  <script>
+    // ============= SETUP CANVAS =============
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    // ============= GAME STATE =============
+    let score = 0;
+    let highScore = localStorage.getItem('leviHighScore') || 0;
+    let lives = 3;
+    let gameActive = true;
+    let gamePaused = false;
+    let gravity = 0.6;
+    let speed = 5;
+    let doubleJumpAvailable = false;
+    let isDoubleJumped = false;
+
+    // Skins
+    const skins = {
+      blue: { body: "#0078D7", head: "#FFCC00" },
+      red: { body: "#E74C3C", head: "#F1C40F" },
+      green: { body: "#2ECC71", head: "#F1C40F" }
+    };
+    let currentSkin = "blue";
+
+    // Parallax Background Layers
+    const bgLayers = [
+      { speed: 0.3, color: "#B0E0E6", height: 100, y: 50 },   // Far clouds
+      { speed: 0.6, color: "#9ACD32", height: 60, y: 120 },   // Hills
+      { speed: 1.0, color: "#228B22", height: 80, y: canvas.height - 80 } // Ground base
+    ];
+    let bgOffset = 0;
+
+    // Player with sprite-like drawing
+    const player = {
+      x: canvas.width * 0.2,
+      y: 0,
+      width: 32,
+      height: 55,
+      vy: 0,
+      jumping: false,
+      grounded: false,
+      draw() {
+        const skin = skins[currentSkin];
+        // Body
+        ctx.fillStyle = skin.body;
+        ctx.fillRect(this.x, this.y, this.width, this.height - 18);
+        // Head
+        ctx.fillStyle = skin.head;
+        ctx.fillRect(this.x + 6, this.y - 15, 20, 15);
+        // Face (eyes)
+        ctx.fillStyle = 'black';
+        ctx.fillRect(this.x + 10, this.y - 12, 3, 3);
+        ctx.fillRect(this.x + 20, this.y - 12, 3, 3);
+      },
+      update() {
+        this.vy += gravity;
+        this.y += this.vy;
+
+        if (this.y > canvas.height - 80 - this.height) {
+          this.y = canvas.height - 80 - this.height;
+          this.vy = 0;
+          this.jumping = false;
+          this.grounded = true;
+          isDoubleJumped = false; // Reset double jump on landing
+        } else {
+          this.grounded = false;
+        }
+      },
+      jump() {
+        if (gamePaused) return;
+        if (this.grounded) {
+          this.vy = -15;
+          this.jumping = true;
+          this.grounded = false;
+          doubleJumpAvailable = true;
+          playSound('jumpSfx');
+        } else if (doubleJumpAvailable && !isDoubleJumped) {
+          this.vy = -14;
+          isDoubleJumped = true;
+          playSound('jumpSfx');
+        }
+      }
+    };
+
+    // Obstacles
+    const obstacles = [];
+    const obstacleColors = ['#FF0000', '#00A6FF', '#FF8C00', '#00CC44', '#9B59B6'];
+    const powerUps = [];
+    const powerUpTypes = ['shield', 'magnet', 'slowmo'];
+
+    // Particles for effects
+    const particles = [];
+
+    function createParticles(x, y, color = '#FFD700') {
+      for (let i = 0; i < 8; i++) {
+        particles.push({
+          x, y,
+          vx: (Math.random() - 0.5) * 6,
+          vy: (Math.random() - 0.5) * 6 - 2,
+          life: 30,
+          color
+        });
+      }
+    }
+
+    function updateParticles() {
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life--;
+        p.vy += 0.2; // light gravity
+
+        ctx.globalAlpha = p.life / 30;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+
+        if (p.life <= 0) particles.splice(i, 1);
+      }
+    }
+
+    // Spawn Obstacle
+    function spawnObstacle() {
+      if (Math.random() < 0.02 + (score / 5000) && gameActive && !gamePaused) {
+        const width = 20 + Math.random() * 30;
+        const height = 20 + Math.random() * 40;
+        obstacles.push({
+          x: canvas.width,
+          y: canvas.height - 80 - height,
+          width,
+          height,
+          color: obstacleColors[Math.floor(Math.random() * obstacleColors.length)],
+          passed: false
+        });
+      }
+    }
+
+    // Spawn Power-Up
+    function spawnPowerUp() {
+      if (Math.random() < 0.005 && gameActive && !gamePaused) {
+        const type = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
+        powerUps.push({
+          x: canvas.width,
+          y: canvas.height - 80 - 40 - Math.random() * 80,
+          radius: 12,
+          type,
+          collected: false,
+          color: type === 'shield' ? '#3498DB' : type === 'magnet' ? '#9B59B6' : '#E67E22'
+        });
+      }
+    }
+
+    // Studs (Collectibles)
+    const studs = [];
+
+    function spawnStud() {
+      if (Math.random() < 0.012 && gameActive && !gamePaused) {
+        studs.push({
+          x: canvas.width,
+          y: canvas.height - 80 - 40 - Math.random() * 100,
+          radius: 8,
+          collected: false
+        });
+      }
+    }
+
+    // Draw Ground with Lego studs
+    function drawGround() {
+      ctx.fillStyle = "#228B22";
+      ctx.fillRect(0, canvas.height - 80, canvas.width, 80);
+
+      ctx.fillStyle = "#FFD700";
+      for (let i = (bgOffset * 0.5) % 40; i < canvas.width; i += 40) {
+        ctx.beginPath();
+        ctx.arc(i, canvas.height - 80, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Draw Parallax Background
+    function drawBackground() {
+      bgOffset += speed * 0.5;
+
+      // Sky
+      ctx.fillStyle = "#87CEEB";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Cloud layer
+      ctx.fillStyle = bgLayers[0].color;
+      for (let i = -50; i < canvas.width; i += 100) {
+        ctx.beginPath();
+        ctx.arc(i - (bgOffset * bgLayers[0].speed) % 200, bgLayers[0].y, 30, 0, Math.PI * 2);
+        ctx.arc(i + 30 - (bgOffset * bgLayers[0].speed) % 200, bgLayers[0].y - 10, 25, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Hill layer
+      ctx.fillStyle = bgLayers[1].color;
+      ctx.beginPath();
+      ctx.moveTo(0, canvas.height);
+      for (let i = 0; i < canvas.width + 50; i += 40) {
+        const hillHeight = 20 * Math.sin((i - bgOffset * bgLayers[1].speed) * 0.05) + bgLayers[1].y;
+        ctx.lineTo(i, hillHeight);
+      }
+      ctx.lineTo(canvas.width, canvas.height);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Collision Detection
+    function checkCollision(a, b) {
+      return a.x < b.x + b.width &&
+             a.x + a.width > b.x &&
+             a.y < b.y + b.height &&
+             a.y + a.height > b.y;
+    }
+
+    // Play Sound
+    function playSound(id) {
+      const sound = document.getElementById(id);
+      sound.currentTime = 0;
+      sound.play().catch(e => console.log("Audio play failed:", e));
+    }
+
+    // Game Loop
+    function update() {
+      if (!gameActive || gamePaused) return;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Background
+      drawBackground();
+
+      // Spawn objects
+      spawnObstacle();
+      spawnStud();
+      spawnPowerUp();
+
+      // Update and draw player
+      player.update();
+      player.draw();
+
+      // Update and draw obstacles
+      for (let i = obstacles.length - 1; i >= 0; i--) {
+        const obs = obstacles[i];
+        obs.x -= speed;
+
+        ctx.fillStyle = obs.color;
+        ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+
+        // Score
+        if (!obs.passed && obs.x + obs.width < player.x) {
+          score++;
+          document.getElementById('score').textContent = score;
+          obs.passed = true;
+        }
+
+        // Collision
+        if (checkCollision(player, obs)) {
+          playSound('crashSfx');
+          lives--;
+          document.getElementById('lives').textContent = "❤️".repeat(lives);
+          obstacles.splice(i, 1);
+          if (lives <= 0) gameOver();
+        }
+
+        if (obs.x + obs.width < 0) obstacles.splice(i, 1);
+      }
+
+      // Update and draw studs
+      for (let i = studs.length - 1; i >= 0; i--) {
+        const stud = studs[i];
+        stud.x -= speed;
+
+        ctx.fillStyle = "#FFD700";
+        ctx.beginPath();
+        ctx.arc(stud.x, stud.y, stud.radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Collect
+        if (!stud.collected &&
+            player.x < stud.x + stud.radius &&
+            player.x + player.width > stud.x - stud.radius &&
+            player.y < stud.y + stud.radius &&
+            player.y + player.height > stud.y - stud.radius) {
+          stud.collected = true;
+          score += 5;
+          document.getElementById('score').textContent = score;
+          createParticles(stud.x, stud.y);
+          playSound('collectSfx');
+        }
+
+        if (stud.x + stud.radius < 0 || stud.collected) studs.splice(i, 1);
+      }
+
+      // Update and draw power-ups
+      for (let i = powerUps.length - 1; i >= 0; i--) {
+        const pu = powerUps[i];
+        pu.x -= speed;
+
+        ctx.fillStyle = pu.color;
+        ctx.beginPath();
+        ctx.arc(pu.x, pu.y, pu.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "white";
+        ctx.font = "14px Arial";
+        ctx.fillText("★", pu.x - 6, pu.y + 5);
+
+        // Collect power-up
+        if (!pu.collected &&
+            player.x < pu.x + pu.radius &&
+            player.x + player.width > pu.x - pu.radius &&
+            player.y < pu.y + pu.radius &&
+            player.y + player.height > pu.y - pu.radius) {
+          pu.collected = true;
+          activatePowerUp(pu.type);
+          createParticles(pu.x, pu.y, pu.color);
+          playSound('collectSfx');
+        }
+
+        if (pu.x + pu.radius < 0 || pu.collected) powerUps.splice(i, 1);
+      }
+
+      // Update particles
+      updateParticles();
+
+      // Draw ground
+      drawGround();
+
+      // Increase difficulty
+      if (score > 0 && score % 60 === 0) {
+        speed = Math.min(12, 5 + Math.floor(score / 60) * 0.4);
+      }
+
+      requestAnimationFrame(update);
+    }
+
+    function activatePowerUp(type) {
+      switch(type) {
+        case 'shield':
+          lives = Math.min(5, lives + 1);
+          document.getElementById('lives').textContent = "❤️".repeat(lives);
+          break;
+        case 'magnet':
+          // Pull nearby studs
+          studs.forEach(stud => {
+            if (stud.x > player.x && stud.x < player.x + 200) {
+              stud.x -= 5;
+              stud.y += (player.y - stud.y) * 0.05;
+            }
+          });
+          break;
+        case 'slowmo':
+          speed *= 0.5;
+          setTimeout(() => { if (gameActive) speed *= 2; }, 3000);
+          break;
+      }
+    }
+
+    function gameOver() {
+      gameActive = false;
+      document.getElementById('finalScore').textContent = score;
+      document.getElementById('gameOver').style.display = 'block';
+
+      if (score > highScore) {
+        highScore = score;
+        localStorage.setItem('leviHighScore', highScore);
+        document.getElementById('highScore').textContent = highScore;
+      }
+    }
+
+    function resetGame() {
+      score = 0;
+      lives = 3;
+      speed = 5;
+      obstacles.length = 0;
+      studs.length = 0;
+      powerUps.length = 0;
+      particles.length = 0;
+      player.y = canvas.height - 80 - player.height;
+      player.vy = 0;
+      gameActive = true;
+      gamePaused = false;
+      document.getElementById('score').textContent = score;
+      document.getElementById('lives').textContent = "❤️❤️❤️";
+      document.getElementById('gameOver').style.display = 'none';
+      document.getElementById('pauseMenu').style.display = 'none';
+      update();
+    }
+
+    // ============= CONTROLS =============
+    const jumpZone = document.getElementById('jumpZone');
+    jumpZone.addEventListener('touchstart', e => { e.preventDefault(); player.jump(); });
+    jumpZone.addEventListener('mousedown', () => player.jump());
+    window.addEventListener('keydown', e => {
+      if (e.code === 'Space' || e.code === 'ArrowUp') player.jump();
+      if (e.code === 'Escape') togglePause();
+    });
+
+    // Skin Selector
+    document.querySelectorAll('.skinBtn').forEach(btn => {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('.skinBtn').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        currentSkin = this.dataset.skin;
+      });
+    });
+
+    // Pause
+    document.getElementById('settingsBtn').addEventListener('click', togglePause);
+    document.getElementById('resumeBtn').addEventListener('click', togglePause);
+    document.getElementById('homeBtn').addEventListener('click', () => {
+      document.getElementById('pauseMenu').style.display = 'none';
+      resetGame();
+    });
+    document.getElementById('restartBtn').addEventListener('click', resetGame);
+
+    function togglePause() {
+      gamePaused = !gamePaused;
+      if (gamePaused) {
+        document.getElementById('pauseMenu').style.display = 'block';
+      } else {
+        document.getElementById('pauseMenu').style.display = 'none';
+        update();
+      }
+    }
+
+    // ============= INIT GAME =============
+    document.getElementById('highScore').textContent = highScore;
+    player.y = canvas.height - 80 - player.height;
+    update();
+  </script>
+</body>
+</html>
