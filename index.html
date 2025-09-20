@@ -74,10 +74,26 @@
       transform: scale(0.97);
     }
 
+    /* ✅ IN-GAME TITLE — Top Center */
+    #inGameTitle {
+      position: absolute;
+      top: 10px;
+      left: 0;
+      width: 100%;
+      text-align: center;
+      color: #FFD700;
+      font-size: 24px;
+      font-weight: bold;
+      text-shadow: 2px 2px 0 #000;
+      z-index: 15;
+      pointer-events: none;
+      letter-spacing: 1px;
+    }
+
     /* IN-GAME UI */
     #gameUI {
       position: absolute;
-      top: 15px;
+      top: 50px;
       left: 15px;
       background: rgba(0,0,0,0.6);
       padding: 12px 16px;
@@ -92,8 +108,8 @@
 
     #coinUI {
       position: absolute;
-      top: 15px;
-      right: 15px;
+      top: 50px;
+      right: 75px; /* ✅ Moved left to make space for settings button */
       background: rgba(0,0,0,0.6);
       padding: 12px 16px;
       border-radius: 12px;
@@ -107,7 +123,7 @@
 
     #livesUI {
       position: absolute;
-      top: 70px;
+      top: 105px;
       left: 15px;
       color: #ff5e5e;
       font-size: 22px;
@@ -116,9 +132,10 @@
       pointer-events: none;
     }
 
+    /* ✅ SETTINGS BUTTON — Top Right, with safe margin */
     #settingsBtn {
       position: absolute;
-      top: 15px;
+      top: 50px;
       right: 15px;
       background: rgba(255,255,255,0.3);
       border: 2px solid white;
@@ -133,6 +150,7 @@
       align-items: center;
       font-size: 20px;
       cursor: pointer;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.3);
     }
 
     /* MENUS */
@@ -205,7 +223,10 @@
   <!-- GAME CANVAS -->
   <canvas id="gameCanvas"></canvas>
 
-  <!-- IN-GAME UI (hidden until game starts) -->
+  <!-- ✅ IN-GAME TITLE -->
+  <div id="inGameTitle">LEVI RUNNER</div>
+
+  <!-- IN-GAME UI -->
   <div id="gameUI">SCORE: <span id="score">0</span></div>
   <div id="coinUI">COINS: <span id="coins">0</span></div>
   <div id="livesUI">LIVES: <span id="lives">❤️❤️❤️</span></div>
@@ -252,6 +273,7 @@
     const ctx = gameCanvas.getContext('2d');
     const jumpZone = document.getElementById('jumpZone');
     const settingsBtn = document.getElementById('settingsBtn');
+    const inGameTitle = document.getElementById('inGameTitle'); // ✅ Added reference
 
     // Resize canvas
     function resizeCanvas() {
@@ -269,7 +291,7 @@
     let gameActive = false;
     let gamePaused = false;
 
-    // Load leaderboard from localStorage
+    // Load leaderboard
     function loadLeaderboard() {
       const saved = localStorage.getItem('leviLeaderboard');
       return saved ? JSON.parse(saved) : [];
@@ -286,12 +308,9 @@
         leaderboard.push({ name, score, coins });
       }
 
-      // Sort by score, descending
       leaderboard.sort((a, b) => b.score - a.score);
-      // Keep top 10
       const top10 = leaderboard.slice(0, 10);
       localStorage.setItem('leviLeaderboard', JSON.stringify(top10));
-
       updateLeaderboardDisplay();
     }
 
@@ -304,7 +323,6 @@
       leaderboardDiv.innerHTML = html;
     }
 
-    // Initialize leaderboard on load
     updateLeaderboardDisplay();
 
     // ============= START GAME =============
@@ -312,21 +330,19 @@
       const name = playerNameInput.value.trim() || "Runner";
       currentPlayer = name;
 
-      // Hide start screen
       startScreen.style.display = 'none';
       jumpZone.style.display = 'block';
       settingsBtn.style.display = 'flex';
+      inGameTitle.style.display = 'block'; // ✅ Show title in game
 
-      // Show game UI
       document.getElementById('gameUI').style.display = 'block';
       document.getElementById('coinUI').style.display = 'block';
       document.getElementById('livesUI').style.display = 'block';
 
-      // Reset and start game
       resetGame();
     });
 
-    // ============= GAME ENGINE (same as before, slightly adjusted) =============
+    // ============= GAME ENGINE =============
     let gravity = 0.6;
     let speed = 5;
     let doubleJumpAvailable = false;
@@ -573,216 +589,4 @@
           ctx.translate(obs.x + obs.width/2, obs.y + obs.height/2);
           ctx.rotate(obs.angle);
           ctx.fillStyle = obs.color;
-          ctx.fillRect(-obs.width/2, -obs.height/2, obs.width, obs.height);
-          ctx.restore();
-        } else if (obs.type === 'fire') {
-          obs.angle = (obs.angle + 0.2) % Math.PI * 2;
-          const flameHeight = 10 + Math.sin(obs.angle) * 5;
-          ctx.fillStyle = obs.color;
-          ctx.fillRect(obs.x, obs.y - flameHeight, obs.width, flameHeight);
-          ctx.fillStyle = '#FF0000';
-          ctx.fillRect(obs.x, obs.y - flameHeight + 2, obs.width, flameHeight - 2);
-        } else {
-          ctx.fillStyle = obs.color;
-          ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
-        }
-
-        if (!obs.passed && obs.x + obs.width < player.x) {
-          score++;
-          document.getElementById('score').textContent = score;
-          obs.passed = true;
-        }
-
-        if (checkCollision(player, obs)) {
-          playSound('crashSfx');
-          vibrate();
-          lives--;
-          document.getElementById('lives').textContent = "❤️".repeat(lives);
-          obstacles.splice(i, 1);
-          if (lives <= 0) gameOver();
-        }
-
-        if (obs.x + obs.width < 0) obstacles.splice(i, 1);
-      }
-
-      // Coins
-      for (let i = coinsArr.length - 1; i >= 0; i--) {
-        const coin = coinsArr[i];
-        coin.x -= speed;
-        coin.rotation += 0.2;
-
-        ctx.save();
-        ctx.translate(coin.x, coin.y);
-        ctx.rotate(coin.rotation);
-        ctx.fillStyle = "#FFEB3B";
-        ctx.beginPath();
-        ctx.arc(0, 0, coin.radius, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = "#FF9800";
-        ctx.beginPath();
-        ctx.arc(0, 0, coin.radius - 3, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-
-        if (!coin.collected &&
-            player.x < coin.x + coin.radius &&
-            player.x + player.width > coin.x - coin.radius &&
-            player.y < coin.y + coin.radius &&
-            player.y + player.height > coin.y - coin.radius) {
-          coin.collected = true;
-          coins++;
-          document.getElementById('coins').textContent = coins;
-          createParticles(coin.x, coin.y, "#FFEB3B");
-          playSound('collectSfx');
-        }
-
-        if (coin.x + coin.radius < 0 || coin.collected) coinsArr.splice(i, 1);
-      }
-
-      // Power-ups
-      for (let i = powerUps.length - 1; i >= 0; i--) {
-        const pu = powerUps[i];
-        pu.x -= speed;
-
-        ctx.fillStyle = pu.color;
-        ctx.beginPath();
-        ctx.arc(pu.x, pu.y, pu.radius, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = "white";
-        ctx.font = "16px Arial";
-        ctx.textAlign = "center";
-        ctx.fillText("★", pu.x, pu.y + 5);
-
-        if (!pu.collected &&
-            player.x < pu.x + pu.radius &&
-            player.x + player.width > pu.x - pu.radius &&
-            player.y < pu.y + pu.radius &&
-            player.y + player.height > pu.y - pu.radius) {
-          pu.collected = true;
-          createParticles(pu.x, pu.y, pu.color);
-
-          switch(pu.type) {
-            case 'shield':
-              lives = Math.min(5, lives + 1);
-              document.getElementById('lives').textContent = "❤️".repeat(lives);
-              break;
-            case 'magnet':
-              coinsArr.forEach(coin => {
-                if (coin.x > player.x && coin.x < player.x + 200) {
-                  coin.x -= 8;
-                  coin.y += (player.y - coin.y) * 0.08;
-                }
-              });
-              break;
-            case 'slowmo':
-              speed *= 0.5;
-              setTimeout(() => { if (gameActive) speed *= 2; }, 3000);
-              break;
-            case 'jetpack':
-              player.activateJetpack();
-              break;
-          }
-          playSound('collectSfx');
-        }
-
-        if (pu.x + pu.radius < 0 || pu.collected) powerUps.splice(i, 1);
-      }
-
-      updateParticles();
-
-      if (score > 0 && score % 70 === 0) {
-        speed = Math.min(13, 5 + Math.floor(score / 70) * 0.4);
-      }
-
-      requestAnimationFrame(update);
-    }
-
-    function gameOver() {
-      gameActive = false;
-      document.getElementById('finalScore').textContent = score;
-      document.getElementById('finalCoins').textContent = coins;
-      document.getElementById('gameOver').style.display = 'block';
-      document.getElementById('bgMusic').pause();
-
-      // Save player data
-      savePlayerData(currentPlayer, score, coins);
-    }
-
-    function resetGame() {
-      score = 0;
-      coins = 0;
-      lives = 3;
-      speed = 5;
-      jetpackActive = false;
-      jetpackTimer = 0;
-      obstacles.length = 0;
-      coinsArr.length = 0;
-      powerUps.length = 0;
-      particles.length = 0;
-      player.init();
-      gameActive = true;
-      gamePaused = false;
-
-      document.getElementById('score').textContent = score;
-      document.getElementById('coins').textContent = coins;
-      document.getElementById('lives').textContent = "❤️❤️❤️";
-      document.getElementById('gameOver').style.display = 'none';
-      document.getElementById('pauseMenu').style.display = 'none';
-
-      const bgMusic = document.getElementById('bgMusic');
-      bgMusic.volume = 0.3;
-      bgMusic.play().catch(e => console.log("Music failed to autoplay:", e));
-
-      update();
-    }
-
-    // CONTROLS
-    jumpZone.addEventListener('touchstart', e => { e.preventDefault(); player.jump(); });
-    jumpZone.addEventListener('mousedown', () => player.jump());
-    window.addEventListener('keydown', e => {
-      if ((e.code === 'Space' || e.code === 'ArrowUp') && gameActive) player.jump();
-      if (e.code === 'Escape') togglePause();
-    });
-
-    document.querySelectorAll('.skinBtn').forEach(btn => {
-      btn.addEventListener('click', function() {
-        document.querySelectorAll('.skinBtn').forEach(b => b.classList.remove('active'));
-        this.classList.add('active');
-        currentSkin = this.dataset.skin;
-      });
-    });
-
-    settingsBtn.addEventListener('click', togglePause);
-    document.getElementById('resumeBtn').addEventListener('click', togglePause);
-    document.getElementById('homeBtn').addEventListener('click', () => {
-      document.getElementById('pauseMenu').style.display = 'none';
-      // Go back to start screen
-      startScreen.style.display = 'flex';
-      jumpZone.style.display = 'none';
-      settingsBtn.style.display = 'none';
-      document.getElementById('gameUI').style.display = 'none';
-      document.getElementById('coinUI').style.display = 'none';
-      document.getElementById('livesUI').style.display = 'none';
-      gameActive = false;
-      document.getElementById('bgMusic').pause();
-    });
-    document.getElementById('restartBtn').addEventListener('click', resetGame);
-
-    function togglePause() {
-      gamePaused = !gamePaused;
-      const bgMusic = document.getElementById('bgMusic');
-      if (gamePaused) {
-        document.getElementById('pauseMenu').style.display = 'block';
-        bgMusic.pause();
-      } else {
-        document.getElementById('pauseMenu').style.display = 'none';
-        bgMusic.play();
-        update();
-      }
-    }
-
-    // Initialize player position
-    player.init();
-  </script>
-</body>
-</html>
+          ctx.fillRec
